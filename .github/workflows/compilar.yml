@@ -44,15 +44,36 @@ jobs:
       # Siempre la misma firma: así cada APK nuevo se instala encima del anterior sin perder datos.
       - name: Firma
         run: |
-          mkdir -p ~/.android
-          cp android-firma/debug.keystore ~/.android/debug.keystore
+          cat >> android/app/build.gradle <<'EOF'
+
+          android {
+              signingConfigs {
+                  firma {
+                      storeFile file('../../android-firma/debug.keystore')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+              }
+              buildTypes {
+                  release { signingConfig signingConfigs.firma }
+              }
+          }
+          EOF
 
       - name: Compilar APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk ../MisGastos.apk
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../MisGastos.apk
+
+      - name: Verificar firma
+        run: |
+          APKSIGNER=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)apksigner
+          $APKSIGNER verify --print-certs MisGastos.apk | tee firma.txt
+          grep -q 'a817f346feeb8087d7c5ade833267fec79652204d9ecd1af505ad98d2145bf18' firma.txt \
+            || { echo "::error::El APK no quedó firmado con android-firma/debug.keystore"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
