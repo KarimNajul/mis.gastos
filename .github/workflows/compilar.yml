@@ -1,0 +1,99 @@
+# Compila el APK (Android) y el EXE (Windows) en cada push a main
+# y los publica en la página de Releases del repositorio.
+name: Compilar apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Crear proyecto Android
+        run: |
+          npx cap add android
+          npx capacitor-assets generate --android
+          npx cap sync android
+
+      - name: Versión de la app
+        run: |
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+
+      # Siempre la misma firma: así cada APK nuevo se instala encima del anterior sin perder datos.
+      - name: Firma
+        run: |
+          mkdir -p ~/.android
+          cp android-firma/debug.keystore ~/.android/debug.keystore
+
+      - name: Compilar APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../MisGastos.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: MisGastos.apk
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Compilar EXE
+        run: npm run build:exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: dist/MisGastos.exe
+
+  publicar:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Mis Gastos 1.0.${{ github.run_number }}
+          body: |
+            - **Android:** descargá `MisGastos.apk` desde el celular e instalalo (permití "instalar apps de origen desconocido").
+            - **Windows:** descargá `MisGastos.exe` y abrilo con doble clic.
+          files: |
+            MisGastos.apk
+            MisGastos.exe

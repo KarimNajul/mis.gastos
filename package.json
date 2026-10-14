@@ -1,0 +1,37 @@
+{
+  "name": "mis-gastos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Registrá tus gastos por periodos y mirá en qué gastaste.",
+  "main": "electron/main.js",
+  "scripts": {
+    "pc": "electron .",
+    "build:exe": "electron-builder --win portable --publish never",
+    "android:sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.misgastos.app",
+    "productName": "Mis Gastos",
+    "files": ["electron/**", "www/**"],
+    "directories": { "output": "dist" },
+    "win": {
+      "target": "portable",
+      "icon": "www/icons/icon-512.png"
+    },
+    "portable": {
+      "artifactName": "MisGastos.exe"
+    }
+  }
+}
