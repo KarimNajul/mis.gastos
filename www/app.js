@@ -12,6 +12,7 @@ const CATEGORIAS = [
   { id: 'ocio', nombre: 'Ocio', color: '#ec4899' },
   { id: 'ropa', nombre: 'Ropa', color: '#14b8a6' },
   { id: 'educacion', nombre: 'Educación', color: '#6366f1' },
+  { id: 'tecnologia', nombre: 'Tecnología', color: '#0ea5e9' },
   { id: 'otros', nombre: 'Otros', color: '#94a3b8' },
 ];
 const CAT = Object.fromEntries(CATEGORIAS.map(c => [c.id, c]));
@@ -522,7 +523,8 @@ async function dictarGasto(btn) {
       const f = form();
       f.nombre.value = g.nombre;
       f.costo.value = g.costo !== null ? String(g.costo).replace('.', ',') : '';
-      if (g.categoria) f.categoria.value = g.categoria;
+      // Si no se reconoce la categoría va a "Otros" (no queda la que estaba elegida).
+      f.categoria.value = g.categoria || 'otros';
       mostrar('Escuchando…', `Escuché: «${texto}»`);
 
       if (!g.nombre || g.costo === null) {

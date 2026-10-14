@@ -55,6 +55,8 @@ function buscarNumeros(tokens) {
     while (j < tokens.length) {
       const t = tokens[j];
       const d = numeroDeDigitos(t);
+      // Dos cifras seguidas son números distintos ("play 5 600 mil" → 5 y 600 mil).
+      if (d !== null && j > i && numeroDeDigitos(tokens[j - 1]) !== null) break;
       if (d !== null) actual += d;
       else if (t in NUMEROS) actual += NUMEROS[t];
       else if (esMiles(t)) { total += (actual || 1) * 1000; actual = 0; }
@@ -81,6 +83,7 @@ const PALABRAS_CATEGORIA = {
   ocio: 'ocio cine salida salidas bar boliche cerveza birra juego juegos recital teatro viaje vacaciones entrada entradas futbol regalo',
   ropa: 'ropa zapatillas remera pantalon campera zapatos vestido buzo medias jean',
   educacion: 'educacion libro libros curso cursos facultad universidad colegio escuela utiles fotocopias apuntes clase clases',
+  tecnologia: 'tecnologia electronica monitor computadora compu notebook laptop pc placa teclado mouse auriculares tablet impresora cargador memoria disco ssd procesador consola play playstation xbox nintendo joystick televisor tele tv parlante camara router smartwatch',
   otros: 'otros otro',
 };
 // Nombres de categoría dichos directamente ("pizza 12000 ocio"): se usan como categoría
@@ -88,7 +91,7 @@ const PALABRAS_CATEGORIA = {
 const CATEGORIA_POR_NOMBRE = {
   comida: 'comida', super: 'super', supermercado: 'super', transporte: 'transporte',
   servicios: 'servicios', servicio: 'servicios', hogar: 'hogar', salud: 'salud', ocio: 'ocio',
-  ropa: 'ropa', educacion: 'educacion', otros: 'otros',
+  ropa: 'ropa', educacion: 'educacion', tecnologia: 'tecnologia', otros: 'otros',
 };
 const CATEGORIA_DE_PALABRA = {};
 for (const [cat, palabras] of Object.entries(PALABRAS_CATEGORIA)) {
@@ -105,8 +108,9 @@ const capitalizar = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 function interpretarGasto(texto) {
   const limpio = String(texto)
-    // Miles separados con espacio: "90 000" → "90000", "1 500 000" → "1500000".
-    .replace(/(\d)[\s  ](?=\d{3}(?!\d))/g, '$1')
+    // Miles separados con espacio: "90 000" → "90000", "1 500 000" → "1500000"
+    // (pero no "5 600 mil", que son dos números).
+    .replace(/(\d)[\s  ](?=\d{3}(?!\d)(?![\s  ]*(mil|k)\b))/gi, '$1')
     // Pegados: "100mil" / "100k" → "100 mil" / "100 k".
     .replace(/(\d)(mil|k)\b/gi, '$1 $2');
 
