@@ -312,7 +312,33 @@ function vistaHistorial() {
 }
 
 function vistaAjustes() {
+  const prefs = Voz.preferencias();
+  const tonos = Object.entries(Voz.TONOS)
+    .map(([id, t]) => `<option value="${id}" ${prefs.tono === id ? 'selected' : ''}>${t.nombre}</option>`).join('');
   return `
+    ${Voz.disponible ? `
+    <section class="card">
+      <h2>Voz del asistente</h2>
+      <form class="ajustes-voz" id="ajustes-voz" onsubmit="return false">
+        <label>Voz
+          <select name="voz" disabled><option>Cargando voces…</option></select>
+        </label>
+        <div class="fila">
+          <label>Tono
+            <select name="tono">${tonos}</select>
+          </label>
+          <label>Forma de hablar
+            <select name="estilo">
+              <option value="neutro" ${prefs.estilo === 'neutro' ? 'selected' : ''}>Neutra</option>
+              <option value="argento" ${prefs.estilo === 'argento' ? 'selected' : ''}>Argentina 🧉</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" class="btn borde" data-accion="probar-voz">🔊 Probar voz</button>
+        <p class="etiqueta" id="nota-voces" hidden></p>
+      </form>
+    </section>` : ''}
+
     <section class="card">
       <h2>Copia de seguridad</h2>
       <p class="etiqueta">Los datos se guardan solo en este dispositivo. Exportalos para tener un respaldo o para pasarlos a otro dispositivo (importar reemplaza los datos actuales).</p>
@@ -351,6 +377,7 @@ function render() {
     default: html = vistaInicio(); tab = 'inicio';
   }
   $app.innerHTML = html;
+  if (vista === 'ajustes' && Voz.disponible) cargarVocesEnAjustes();
   document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('activo', a.dataset.tab === tab));
   window.scrollTo(0, 0);
 }
@@ -402,7 +429,54 @@ $app.addEventListener('input', e => {
 
 $app.addEventListener('change', e => {
   if (e.target.id === 'archivo-importar') importar(e.target.files[0]);
+  if (e.target.form && e.target.form.id === 'ajustes-voz') {
+    const { name, value } = e.target;
+    if (name === 'voz') {
+      const opcion = e.target.selectedOptions[0];
+      Voz.guardarPreferencias({ voz: value, vozLang: opcion.dataset.lang || '' });
+    } else {
+      Voz.guardarPreferencias({ [name]: value });
+    }
+    // Habla al toque para escuchar cómo quedó.
+    Voz.detener();
+    Voz.hablar(frases().prueba);
+  }
 });
+
+// Llena la lista de voces de Ajustes (las voces del navegador cargan de forma asíncrona).
+async function cargarVocesEnAjustes() {
+  const form = document.getElementById('ajustes-voz');
+  let voces = [];
+  try { voces = await Voz.listarVoces(); } catch (e) { console.warn('Voces:', e); }
+  if (!form.isConnected) return;
+  // Si el navegador todavía no cargó sus voces, se vuelve a intentar cuando lleguen.
+  if (!voces.length && !Voz.esAndroid && window.speechSynthesis) {
+    speechSynthesis.addEventListener('voiceschanged', cargarVocesEnAjustes, { once: true });
+  }
+
+  const prefs = Voz.preferencias();
+  const etiquetaGenero = { hombre: ' · hombre', mujer: ' · mujer' };
+  const opciones = voces.map(v => `
+    <option value="${esc(v.id)}" data-lang="${esc(v.lang)}" ${prefs.voz === v.id ? 'selected' : ''}>
+      ${esc(v.nombre)} — ${esc(v.pais)}${etiquetaGenero[v.genero] || ''}
+    </option>`).join('');
+  form.voz.innerHTML = `<option value="">Automática</option>${opciones}`;
+  form.voz.disabled = false;
+
+  const nota = document.getElementById('nota-voces');
+  const hayArgentina = voces.some(v => v.lang === 'es-AR');
+  const hayHombre = voces.some(v => v.genero === 'hombre');
+  const avisos = [];
+  if (!voces.length) avisos.push('Este dispositivo no tiene voces en español instaladas.');
+  else if (Voz.esAndroid) {
+    if (!hayArgentina) avisos.push('Para más voces o acento argentino: Ajustes de Android → Texto a voz → instalar datos de voz en español.');
+  } else {
+    if (!hayArgentina) avisos.push('Este navegador no tiene voces con acento argentino. Microsoft Edge sí trae dos: Elena (mujer) y Tomás (hombre).');
+    if (!hayHombre) avisos.push('No hay voces de hombre: probá el tono "Grave".');
+  }
+  nota.textContent = avisos.join(' ');
+  nota.hidden = !avisos.length;
+}
 
 $app.addEventListener('click', e => {
   const btn = e.target.closest('[data-accion]');
@@ -442,6 +516,10 @@ $app.addEventListener('click', e => {
     case 'exportar':
       exportar();
       break;
+    case 'probar-voz':
+      Voz.detener();
+      Voz.hablar(frases().prueba);
+      break;
     case 'importar':
       document.getElementById('archivo-importar').click();
       break;
@@ -464,11 +542,43 @@ $app.addEventListener('click', e => {
 let asistente = null;
 const CANCELADO = Symbol('cancelado');
 
-function montoHablado(costo) {
+function montoEnPesos(costo) {
   const pesos = Math.floor(costo);
   const centavos = Math.round((costo - pesos) * 100);
   return `${pesos} ${pesos === 1 ? 'peso' : 'pesos'}${centavos ? ` con ${centavos} centavos` : ''}`;
 }
+
+// Lo que dice el asistente, según la "forma de hablar" elegida en Ajustes.
+const FRASES = {
+  neutro: {
+    monto: montoEnPesos,
+    pregunta: (nombre, monto, categoria) => `${nombre}, ${monto}, categoría ${categoria}. ¿Lo confirmás?`,
+    repreguntar: 'No te entendí. ¿Lo agrego? Decí sí o no.',
+    agregado: 'Listo, agregado.',
+    repetir: 'Bueno, decime el gasto de nuevo.',
+    cancelado: 'Listo, lo cancelé.',
+    sinMonto: 'No entendí el monto. Decime el gasto de nuevo.',
+    sinNombre: 'No entendí el nombre. Decime el gasto de nuevo.',
+    abandono: 'No te entendí. Te dejé el gasto cargado para que lo revises.',
+    prueba: 'Hola. Así voy a sonar cuando confirme tus gastos.',
+  },
+  argento: {
+    // 12000 → "12 lucas"
+    monto: costo => (costo >= 1000 && costo % 1000 === 0
+      ? `${costo / 1000} ${costo === 1000 ? 'luca' : 'lucas'}`
+      : montoEnPesos(costo)),
+    pregunta: (nombre, monto, categoria) => `A ver si entendí: ${nombre}, ${monto}, en ${categoria}. ¿Lo anoto, che?`,
+    repreguntar: '¿Eh? ¿Lo anoto o no? Decime sí o no.',
+    agregado: '¡Joya! Ya quedó anotado.',
+    repetir: 'Uh, perdón. Dale, decímelo de nuevo.',
+    cancelado: 'Listo, acá no pasó nada.',
+    sinMonto: 'Che, no caché cuánto salió. Repetímelo.',
+    sinNombre: 'No caché qué compraste. Repetímelo.',
+    abandono: 'Me perdí. Te lo dejé cargado para que lo mires vos.',
+    prueba: '¡Hola, che! Así te voy a hablar cuando anotes un gasto. ¿Va?',
+  },
+};
+const frases = () => FRASES[Voz.preferencias().estilo] || FRASES.neutro;
 
 async function dictarGasto(btn) {
   // Tocar el botón con el asistente activo lo cancela.
@@ -528,18 +638,15 @@ async function dictarGasto(btn) {
       mostrar('Escuchando…', `Escuché: «${texto}»`);
 
       if (!g.nombre || g.costo === null) {
-        await hablar(g.costo === null
-          ? 'No entendí el monto. Decime el gasto de nuevo.'
-          : 'No entendí el nombre. Decime el gasto de nuevo.');
+        await hablar(g.costo === null ? frases().sinMonto : frases().sinNombre);
         continue;
       }
 
       const categoria = catDe(f.categoria.value).nombre;
       let respuesta = null;
       for (let intento = 0; intento < 2 && !respuesta; intento++) {
-        await hablar(intento === 0
-          ? `${g.nombre}, ${montoHablado(g.costo)}, categoría ${categoria}. ¿Lo confirmás?`
-          : 'No te entendí. ¿Lo agrego? Decí sí o no.');
+        const dice = frases();
+        await hablar(intento === 0 ? dice.pregunta(g.nombre, dice.monto(g.costo), categoria) : dice.repreguntar);
         mostrar('Escuchando…', `Escuché: «${texto}». Decí «sí» para agregarlo, «no» para repetirlo o «cancelar».`);
         respuesta = interpretarRespuesta(await escuchar('¿Lo confirmás? Decí sí o no'));
       }
@@ -548,12 +655,12 @@ async function dictarGasto(btn) {
         if (agregarDesdeFormulario(form())) {
           escuchado = '';
           toast('Gasto agregado');
-          await hablar('Listo, agregado.');
+          await hablar(frases().agregado);
         }
         return;
       }
       if (respuesta === 'no') {
-        await hablar('Bueno, decime el gasto de nuevo.');
+        await hablar(frases().repetir);
         continue;
       }
       if (respuesta === 'cancelar') {
@@ -561,9 +668,9 @@ async function dictarGasto(btn) {
         f2.nombre.value = '';
         f2.costo.value = '';
         escuchado = '';
-        await hablar('Listo, lo cancelé.');
+        await hablar(frases().cancelado);
       } else {
-        await hablar('No te entendí. Te dejé el gasto cargado para que lo revises.');
+        await hablar(frases().abandono);
       }
       return;
     }

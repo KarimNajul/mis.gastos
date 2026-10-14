@@ -1,10 +1,11 @@
-# Compila el APK (Android) y el EXE (Windows) en cada push a main
-# y los publica en la página de Releases del repositorio.
+# Compila el APK (Android) y el EXE (Windows) y los publica en Releases.
+# - main: versión oficial (la que entrega el link de descarga).
+# - pruebas: versión de prueba (pre-release), no cambia el link de descarga.
 name: Compilar apps
 
 on:
   push:
-    branches: [main]
+    branches: [main, pruebas]
   workflow_dispatch:
 
 permissions:
@@ -115,9 +116,12 @@ jobs:
         with:
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: Versión oficial
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
           name: Mis Gastos 1.0.${{ github.run_number }}
           body: |
             - **Android:** descargá `MisGastos.apk` desde el celular e instalalo (permití "instalar apps de origen desconocido").
@@ -126,8 +130,25 @@ jobs:
             MisGastos.apk
             MisGastos.exe
 
+      # Pre-release: no cuenta como "latest", así que el link de descarga sigue entregando la oficial.
+      - name: Versión de prueba
+        if: github.ref == 'refs/heads/pruebas'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: prueba-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: "PRUEBA ${{ github.run_number }} (no compartir)"
+          prerelease: true
+          make_latest: false
+          body: |
+            Versión de prueba de la rama `pruebas`. Se instala encima de la oficial sin perder datos.
+          files: |
+            MisGastos.apk
+            MisGastos.exe
+
   # Página de descarga + versión web en https://karimnajul.github.io/mis.gastos/
   pagina:
+    if: github.ref == 'refs/heads/main'
     needs: publicar
     runs-on: ubuntu-latest
     permissions:

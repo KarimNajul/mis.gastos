@@ -268,9 +268,81 @@ const Voz = (() => {
 
   /* --- Voz hablada: plugin en el APK, speechSynthesis en el navegador --- */
 
+  // Preferencias de la voz (por dispositivo).
+  const CLAVE_PREFERENCIAS = 'mis-gastos-voz';
+  const PREFERENCIAS_INICIALES = { voz: '', vozLang: '', tono: 'normal', estilo: 'neutro' };
+  function preferencias() {
+    try {
+      return { ...PREFERENCIAS_INICIALES, ...JSON.parse(localStorage.getItem(CLAVE_PREFERENCIAS) || '{}') };
+    } catch (e) {
+      return { ...PREFERENCIAS_INICIALES };
+    }
+  }
+  function guardarPreferencias(cambios) {
+    try { localStorage.setItem(CLAVE_PREFERENCIAS, JSON.stringify({ ...preferencias(), ...cambios })); } catch (e) { /* sin storage */ }
+  }
+
+  const TONOS = {
+    normal: { nombre: 'Normal', pitch: 1, rate: 1.05 },
+    grave: { nombre: 'Grave', pitch: 0.55, rate: 0.95 },
+    agudo: { nombre: 'Agudo', pitch: 1.5, rate: 1.1 },
+    ardilla: { nombre: 'Ardilla 🐿️', pitch: 2, rate: 1.45 },
+    robot: { nombre: 'Robot 🤖', pitch: 0.1, rate: 0.85 },
+    apurado: { nombre: 'Apurado ⚡', pitch: 1.1, rate: 1.8 },
+    tranqui: { nombre: 'Tranqui 😴', pitch: 0.9, rate: 0.7 },
+  };
+
+  const PAISES = {
+    AR: 'Argentina', MX: 'México', ES: 'España', US: 'Estados Unidos', CO: 'Colombia', CL: 'Chile',
+    PE: 'Perú', UY: 'Uruguay', VE: 'Venezuela', 419: 'Latinoamérica', BO: 'Bolivia', PY: 'Paraguay',
+    EC: 'Ecuador', CR: 'Costa Rica', CU: 'Cuba', DO: 'Rep. Dominicana', GT: 'Guatemala', HN: 'Honduras',
+    NI: 'Nicaragua', PA: 'Panamá', PR: 'Puerto Rico', SV: 'El Salvador', GQ: 'Guinea Ecuatorial',
+  };
+  const pais = lang => PAISES[(lang.split(/[-_]/)[1] || '').toUpperCase()] || lang;
+
+  // El navegador no informa el género: se deduce por el nombre de la voz.
+  const HOMBRES = 'tomas alvaro jorge pablo raul arnau dario elias nil saul teo cecilio gerardo liberto luciano pelayo yago alonso gonzalo andres emilio lorenzo mateo diego carlos juan miguel manuel sebastian alex rodrigo federico victor'.split(' ');
+  const MUJERES = 'elena elvira abril estrella irene laia lia triana vera ximena dalia beatriz candela carlota larissa marina nuria renata paloma helena laura sabina salome camila catalina lucia sofia valentina monica paulina isabela angelica'.split(' ');
+  function genero(nombre) {
+    const palabras = sinAcentos(nombre.toLowerCase()).split(/[^a-z]+/);
+    if (palabras.some(p => HOMBRES.includes(p))) return 'hombre';
+    if (palabras.some(p => MUJERES.includes(p)) || palabras.includes('google')) return 'mujer';
+    return null;
+  }
+  // "Microsoft Tomas Online (Natural) - Spanish (Argentina)" → "Tomas".
+  function nombreCorto(nombre) {
+    if (/^Google\b/i.test(nombre)) return 'Google'; // "Google español de Estados Unidos"
+    const limpio = nombre.replace(/^(Microsoft|Google)\s+/i, '').replace(/\s+(Online|Desktop|\(|-).*$/i, '').trim();
+    return limpio || nombre;
+  }
+
+  function vocesWeb() {
+    return new Promise(resolve => {
+      const listar = () => speechSynthesis.getVoices().filter(v => /^es/i.test(v.lang));
+      if (listar().length) return resolve(listar());
+      // Algunas voces cargan un rato después.
+      speechSynthesis.addEventListener('voiceschanged', () => resolve(listar()), { once: true });
+      setTimeout(() => resolve(listar()), 1500);
+    });
+  }
+
+  // [{ id, nombre, lang, pais, genero }] de las voces en español del dispositivo.
+  async function listarVoces() {
+    let crudas = [];
+    if (pluginHabla) {
+      const { voices } = await pluginHabla.getSupportedVoices();
+      crudas = voices.map((v, i) => ({ id: String(i), nombre: v.name, lang: v.lang })).filter(v => /^es/i.test(v.lang));
+    } else if (window.speechSynthesis) {
+      crudas = (await vocesWeb()).map(v => ({ id: v.voiceURI, nombre: v.name, lang: v.lang }));
+    }
+    return crudas
+      .map(v => ({ ...v, nombre: nombreCorto(v.nombre), pais: pais(v.lang), genero: genero(v.nombre) }))
+      .sort((a, b) => (b.lang === 'es-AR') - (a.lang === 'es-AR') || a.pais.localeCompare(b.pais) || a.nombre.localeCompare(b.nombre));
+  }
+
+  // Voz automática: la primera en español, prefiriendo acentos latinoamericanos.
   let vozEspanol = null;
   function elegirVoz() {
-    if (!window.speechSynthesis) return;
     const voces = speechSynthesis.getVoices().filter(v => /^es/i.test(v.lang));
     const preferencia = ['es-AR', 'es-US', 'es-419', 'es-MX', 'es-ES'];
     vozEspanol = voces.sort((a, b) => {
@@ -284,24 +356,33 @@ const Voz = (() => {
   }
 
   async function hablar(texto) {
+    const prefs = preferencias();
+    const tono = TONOS[prefs.tono] || TONOS.normal;
+
     if (pluginHabla) {
-      try { await pluginHabla.speak({ text: texto, lang: 'es-AR', rate: 1.0 }); }
+      const opciones = { text: texto, lang: prefs.vozLang || 'es-AR', rate: tono.rate, pitch: tono.pitch };
+      if (prefs.voz !== '') opciones.voice = Number(prefs.voz);
+      try { await pluginHabla.speak(opciones); }
       catch (e) {
-        try { await pluginHabla.speak({ text: texto, lang: 'es-ES', rate: 1.0 }); } catch (e2) { console.warn('TTS:', e2); }
+        try { await pluginHabla.speak({ text: texto, lang: 'es-ES', rate: tono.rate, pitch: tono.pitch }); }
+        catch (e2) { console.warn('TTS:', e2); }
       }
       return;
     }
     if (!window.speechSynthesis) return;
+    const elegida = prefs.voz && speechSynthesis.getVoices().find(v => v.voiceURI === prefs.voz);
+    const voz = elegida || vozEspanol;
     await new Promise(resolve => {
       const u = new SpeechSynthesisUtterance(texto);
-      u.lang = vozEspanol ? vozEspanol.lang : 'es-AR';
-      if (vozEspanol) u.voice = vozEspanol;
-      u.rate = 1.05;
+      u.lang = voz ? voz.lang : 'es-AR';
+      if (voz) u.voice = voz;
+      u.rate = tono.rate;
+      u.pitch = tono.pitch;
       u.onend = u.onerror = () => resolve();
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
       // Por si el navegador nunca avisa que terminó.
-      setTimeout(resolve, 3000 + texto.length * 100);
+      setTimeout(resolve, 3000 + (texto.length * 100) / tono.rate);
     });
   }
 
@@ -315,9 +396,14 @@ const Voz = (() => {
     disponible: !!plugin || (!!ReconocimientoWeb && !esElectron),
     // El popup nativo de Android tiene su propio botón; en la web se puede cortar a mano.
     sePuedeDetener: !plugin,
+    esAndroid: !!pluginHabla,
     // prompt: texto del cartel de Android mientras escucha.
     escuchar: prompt => (plugin ? escucharNativo(prompt) : escucharWeb()),
     hablar,
+    listarVoces,
+    TONOS,
+    preferencias,
+    guardarPreferencias,
     detener: () => {
       callar();
       if (reconocedorWeb) reconocedorWeb.detener();
