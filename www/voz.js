@@ -326,18 +326,39 @@ const Voz = (() => {
     });
   }
 
-  // [{ id, nombre, lang, pais, genero }] de las voces en español del dispositivo.
+  // [{ id, nombre, lang, pais, genero, online }] de las voces en español del dispositivo.
   async function listarVoces() {
-    let crudas = [];
-    if (pluginHabla) {
-      const { voices } = await pluginHabla.getSupportedVoices();
-      crudas = voices.map((v, i) => ({ id: String(i), nombre: v.name, lang: v.lang })).filter(v => /^es/i.test(v.lang));
-    } else if (window.speechSynthesis) {
-      crudas = (await vocesWeb()).map(v => ({ id: v.voiceURI, nombre: v.name, lang: v.lang }));
-    }
-    return crudas
-      .map(v => ({ ...v, nombre: nombreCorto(v.nombre), pais: pais(v.lang), genero: genero(v.nombre) }))
-      .sort((a, b) => (b.lang === 'es-AR') - (a.lang === 'es-AR') || a.pais.localeCompare(b.pais) || a.nombre.localeCompare(b.nombre));
+    const primeroArgentina = (a, b) => (b.lang === 'es-AR') - (a.lang === 'es-AR') || a.pais.localeCompare(b.pais);
+    if (pluginHabla) return listarVocesAndroid(primeroArgentina);
+    if (!window.speechSynthesis) return [];
+    return (await vocesWeb())
+      .map(v => ({ id: v.voiceURI, nombre: nombreCorto(v.name), lang: v.lang, pais: pais(v.lang), genero: genero(v.name) }))
+      .sort((a, b) => primeroArgentina(a, b) || a.nombre.localeCompare(b.nombre));
+  }
+
+  // Android no da nombre ni género: solo un código ("es-us-x-esd-local") y el país.
+  // Cada voz viene repetida (sin internet y online): se deja una, preferentemente la local.
+  async function listarVocesAndroid(orden) {
+    const { voices } = await pluginHabla.getSupportedVoices();
+    const porVoz = new Map();
+    voices.forEach((v, i) => {
+      if (!/^es/i.test(v.lang)) return;
+      const codigo = String(v.voiceURI || v.name || i);
+      const m = codigo.match(/^(.*?)-(local|network)$/);
+      const clave = m ? m[1] : codigo;
+      const online = !!m && m[2] === 'network';
+      const actual = porVoz.get(clave);
+      if (!actual || (actual.online && !online)) {
+        porVoz.set(clave, { id: String(i), clave, lang: v.lang, pais: pais(v.lang), genero: null, online });
+      }
+    });
+    const lista = [...porVoz.values()].sort((a, b) => orden(a, b) || a.clave.localeCompare(b.clave));
+    // Numeradas por país: "Voz 1 · Estados Unidos", "Voz 2 · Estados Unidos"...
+    const contador = {};
+    return lista.map(v => {
+      contador[v.pais] = (contador[v.pais] || 0) + 1;
+      return { ...v, nombre: `Voz ${contador[v.pais]}` };
+    });
   }
 
   // Voz automática: la primera en español, prefiriendo acentos latinoamericanos.

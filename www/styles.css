@@ -213,6 +213,40 @@ input:focus, select:focus { outline: 2px solid var(--primario); outline-offset: 
 .voz-ayuda { margin: -6px 0 0; font-size: .82rem; color: var(--texto-suave); overflow-wrap: anywhere; }
 .voz-ayuda[hidden] { display: none; }
 
+/* Lista de voces en Ajustes */
+.voz-pista { font-size: .8rem; }
+.lista-voces {
+  margin-top: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+.lista-voces .vacio { padding: 12px; }
+.voz-opcion {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--borde);
+  color: var(--texto);
+  cursor: pointer;
+}
+.voz-opcion:first-child { border-top: 0; }
+.voz-opcion:has(input:checked) { background: var(--primario-suave); }
+.voz-opcion input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  accent-color: var(--primario);
+}
+.voz-titulo { font-size: .95rem; }
+.voz-detalle { font-size: .8rem; color: var(--texto-suave); margin-left: auto; }
+
 .volver { color: var(--primario); text-decoration: none; font-weight: 600; }
 
 /* ---------- Listas de gastos / periodos ---------- */

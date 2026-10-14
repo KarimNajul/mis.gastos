@@ -320,9 +320,10 @@ function vistaAjustes() {
     <section class="card">
       <h2>Voz del asistente</h2>
       <form class="ajustes-voz" id="ajustes-voz" onsubmit="return false">
-        <label>Voz
-          <select name="voz" disabled><option>Cargando voces…</option></select>
-        </label>
+        <div>
+          <div class="etiqueta">Voz <span class="voz-pista">(tocá una para escucharla)</span></div>
+          <div class="lista-voces" id="lista-voces"><p class="vacio">Cargando voces…</p></div>
+        </div>
         <div class="fila">
           <label>Tono
             <select name="tono">${tonos}</select>
@@ -429,19 +430,24 @@ $app.addEventListener('input', e => {
 
 $app.addEventListener('change', e => {
   if (e.target.id === 'archivo-importar') importar(e.target.files[0]);
-  if (e.target.form && e.target.form.id === 'ajustes-voz') {
-    const { name, value } = e.target;
-    if (name === 'voz') {
-      const opcion = e.target.selectedOptions[0];
-      Voz.guardarPreferencias({ voz: value, vozLang: opcion.dataset.lang || '' });
-    } else {
-      Voz.guardarPreferencias({ [name]: value });
-    }
-    // Habla al toque para escuchar cómo quedó.
-    Voz.detener();
-    Voz.hablar(frases().prueba);
+  // Tono y forma de hablar (las voces se manejan con el click, más abajo).
+  if (e.target.form && e.target.form.id === 'ajustes-voz' && e.target.name !== 'voz') {
+    Voz.guardarPreferencias({ [e.target.name]: e.target.value });
+    probarVoz();
   }
 });
+
+// Tocar una voz la elige y la hace hablar (también si ya estaba elegida).
+$app.addEventListener('click', e => {
+  if (!e.target.matches('#ajustes-voz input[name="voz"]')) return;
+  Voz.guardarPreferencias({ voz: e.target.value, vozLang: e.target.dataset.lang || '' });
+  probarVoz();
+});
+
+function probarVoz() {
+  Voz.detener();
+  Voz.hablar(frases().prueba);
+}
 
 // Llena la lista de voces de Ajustes (las voces del navegador cargan de forma asíncrona).
 async function cargarVocesEnAjustes() {
@@ -455,13 +461,16 @@ async function cargarVocesEnAjustes() {
   }
 
   const prefs = Voz.preferencias();
-  const etiquetaGenero = { hombre: ' · hombre', mujer: ' · mujer' };
-  const opciones = voces.map(v => `
-    <option value="${esc(v.id)}" data-lang="${esc(v.lang)}" ${prefs.voz === v.id ? 'selected' : ''}>
-      ${esc(v.nombre)} — ${esc(v.pais)}${etiquetaGenero[v.genero] || ''}
-    </option>`).join('');
-  form.voz.innerHTML = `<option value="">Automática</option>${opciones}`;
-  form.voz.disabled = false;
+  const opcion = (id, lang, titulo, detalle) => `
+    <label class="voz-opcion">
+      <input type="radio" name="voz" value="${esc(id)}" data-lang="${esc(lang)}" ${prefs.voz === id ? 'checked' : ''}>
+      <span class="voz-titulo">${esc(titulo)}</span>
+      ${detalle ? `<span class="voz-detalle">${esc(detalle)}</span>` : ''}
+    </label>`;
+  document.getElementById('lista-voces').innerHTML =
+    opcion('', '', 'Automática', '') +
+    voces.map(v => opcion(v.id, v.lang, `${v.nombre} · ${v.pais}`,
+      [v.genero, v.online ? 'necesita internet' : ''].filter(Boolean).join(' · '))).join('');
 
   const nota = document.getElementById('nota-voces');
   const hayArgentina = voces.some(v => v.lang === 'es-AR');
@@ -517,8 +526,7 @@ $app.addEventListener('click', e => {
       exportar();
       break;
     case 'probar-voz':
-      Voz.detener();
-      Voz.hablar(frases().prueba);
+      probarVoz();
       break;
     case 'importar':
       document.getElementById('archivo-importar').click();
