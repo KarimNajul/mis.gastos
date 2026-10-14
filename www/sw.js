@@ -1,10 +1,11 @@
-// Service worker: guarda la app en caché para que funcione sin internet.
+﻿// Service worker: guarda la app en caché para que funcione sin internet.
 // Al publicar cambios, subí el número de versión para que se actualice.
-const CACHE = 'mis-gastos-v1';
+const CACHE = 'mis-gastos-v9';
 const ARCHIVOS = [
   './',
   './index.html',
   './styles.css',
+  './voz.js',
   './app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

@@ -27,6 +27,11 @@ const ES_ANDROID = !!(window.Capacitor && window.Capacitor.isNativePlatform && w
 const ES_ESCRITORIO = navigator.userAgent.includes('Electron');
 const ES_NATIVA = ES_ANDROID || ES_ESCRITORIO;
 
+// Instalada (APK, EXE o agregada a la pantalla de inicio): sin la barra superior.
+const ES_INSTALADA = ES_NATIVA || navigator.standalone === true
+  || window.matchMedia('(display-mode: standalone)').matches;
+document.documentElement.classList.toggle('modo-app', ES_INSTALADA);
+
 const dinero = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
 const fmtFecha = new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const fmtFechaHora = new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -105,7 +110,7 @@ function toast(msg) {
   }
   el.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.remove(), 2200);
+  toastTimer = setTimeout(() => el.remove(), Math.max(2200, msg.length * 70));
 }
 
 function itemGasto(g, borrable) {
@@ -174,14 +179,16 @@ function vistaInicio() {
   const opciones = CATEGORIAS.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
 
   return `
-    <section class="card destacado">
-      <div class="etiqueta">Periodo actual · desde ${fecha(p.inicio)}</div>
-      <div class="monto-grande">${dinero.format(total(p.gastos))}</div>
-      <div class="etiqueta">${p.gastos.length} ${p.gastos.length === 1 ? 'gasto' : 'gastos'}</div>
-    </section>
-
     <form class="card" id="form-gasto" autocomplete="off">
-      <h2>Nuevo gasto</h2>
+      <div class="form-cabecera">
+        <h2>Nuevo gasto</h2>
+        ${Voz.disponible ? `
+        <button type="button" class="btn-voz" data-accion="voz" title="Cargar por voz. Ej: «Pizza 12 mil ocio»">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>
+          <span>Voz</span>
+        </button>` : ''}
+      </div>
+      <p class="voz-ayuda" id="voz-ayuda" hidden></p>
       <label>Nombre del gasto
         <input name="nombre" required maxlength="60" placeholder="Ej: Almuerzo">
       </label>
@@ -200,7 +207,13 @@ function vistaInicio() {
     </form>
 
     <section class="card">
-      <h2>Gastos del periodo</h2>
+      <div class="card-cabecera">
+        <div>
+          <h2>Gastos del periodo</h2>
+          <div class="etiqueta">Desde ${fecha(p.inicio)} · ${p.gastos.length} ${p.gastos.length === 1 ? 'gasto' : 'gastos'}</div>
+        </div>
+        <span class="etiqueta">Total: ${dinero.format(total(p.gastos))}</span>
+      </div>
       ${gastos.length
         ? `<ul class="lista">${gastos.map(g => itemGasto(g, true)).join('')}</ul>`
         : '<p class="vacio">Todavía no cargaste gastos en este periodo.</p>'}
@@ -277,13 +290,11 @@ function vistaHistorial() {
   }
   const totalGeneral = estado.historial.reduce((s, p) => s + total(p.gastos), 0);
   return `
-    <section class="card destacado">
-      <div class="etiqueta">${estado.historial.length} ${estado.historial.length === 1 ? 'periodo finalizado' : 'periodos finalizados'}</div>
-      <div class="monto-grande">${dinero.format(totalGeneral)}</div>
-      <div class="etiqueta">gastado en total</div>
-    </section>
     <section class="card">
-      <h2>Periodos</h2>
+      <div class="card-cabecera">
+        <h2>Periodos</h2>
+        <span class="etiqueta">Total: ${dinero.format(totalGeneral)}</span>
+      </div>
       <ul class="lista">
         ${estado.historial.map(p => `
           <li>
@@ -350,12 +361,23 @@ window.addEventListener('hashchange', render);
 $app.addEventListener('submit', e => {
   if (e.target.id !== 'form-gasto') return;
   e.preventDefault();
-  const f = e.target;
+  if (agregarDesdeFormulario(e.target)) {
+    document.getElementById('form-gasto').nombre.focus();
+    toast('Gasto agregado');
+  }
+});
+
+// Guarda el gasto del formulario y vuelve a dibujar la pantalla. Devuelve si se pudo.
+function agregarDesdeFormulario(f) {
   const costo = parseMonto(f.costo.value);
+  if (!f.nombre.value.trim()) {
+    f.nombre.reportValidity();
+    return false;
+  }
   if (costo === null) {
     f.costo.setCustomValidity('Ingresá un monto válido mayor a 0');
     f.costo.reportValidity();
-    return;
+    return false;
   }
   estado.activo.gastos.push({
     id: nuevoId(),
@@ -369,11 +391,9 @@ $app.addEventListener('submit', e => {
   const categoria = f.categoria.value;
   render();
   // Dejamos la categoría elegida para cargar varios gastos seguidos.
-  const nuevoForm = document.getElementById('form-gasto');
-  nuevoForm.categoria.value = categoria;
-  nuevoForm.nombre.focus();
-  toast('Gasto agregado');
-});
+  document.getElementById('form-gasto').categoria.value = categoria;
+  return true;
+}
 
 $app.addEventListener('input', e => {
   if (e.target.name === 'costo') e.target.setCustomValidity('');
@@ -389,6 +409,9 @@ $app.addEventListener('click', e => {
   const { accion, id } = btn.dataset;
 
   switch (accion) {
+    case 'voz':
+      dictarGasto(btn);
+      break;
     case 'borrar-gasto': {
       const g = estado.activo.gastos.find(x => x.id === id);
       if (g && confirm(`¿Borrar "${g.nombre}" (${dinero.format(g.costo)})?`)) {
@@ -432,6 +455,126 @@ $app.addEventListener('click', e => {
     }
   }
 });
+
+/* ================= Asistente de voz ================= */
+// Escucha el gasto, lo lee en voz alta y pregunta si se confirma:
+// "sí" lo agrega, "no" vuelve a pedir el gasto, "cancelar" corta.
+
+let asistente = null;
+const CANCELADO = Symbol('cancelado');
+
+function montoHablado(costo) {
+  const pesos = Math.floor(costo);
+  const centavos = Math.round((costo - pesos) * 100);
+  return `${pesos} ${pesos === 1 ? 'peso' : 'pesos'}${centavos ? ` con ${centavos} centavos` : ''}`;
+}
+
+async function dictarGasto(btn) {
+  // Tocar el botón con el asistente activo lo cancela.
+  if (asistente) {
+    asistente.cancelado = true;
+    Voz.detener();
+    return;
+  }
+  const yo = asistente = { cancelado: false };
+  const ayuda = document.getElementById('voz-ayuda');
+  const etiqueta = btn.querySelector('span');
+  let escuchado = '';
+  btn.classList.add('escuchando');
+
+  const form = () => document.getElementById('form-gasto');
+  const mostrar = (boton, texto) => {
+    etiqueta.textContent = boton;
+    if (texto !== undefined) { ayuda.textContent = texto; ayuda.hidden = !texto; }
+  };
+  // Corta todo si se canceló o si el usuario se fue de la pantalla de inicio.
+  const seguir = () => { if (yo.cancelado || !form()) throw CANCELADO; };
+  const hablar = async texto => {
+    seguir();
+    mostrar('Hablando…');
+    await Voz.hablar(texto);
+    seguir();
+  };
+  // Si no se oyó nada devuelve '' en vez de cortar todo.
+  const escuchar = async prompt => {
+    seguir();
+    mostrar('Escuchando…');
+    let texto = '';
+    try {
+      texto = (await Voz.escuchar(prompt)).trim();
+    } catch (err) {
+      if (err.codigo !== 'no-speech' && err.codigo !== 'no-match') throw err;
+    }
+    seguir();
+    return texto;
+  };
+
+  try {
+    for (let ronda = 0; ronda < 5; ronda++) {
+      mostrar('Escuchando…', 'Decí el nombre, el monto y (si querés) la categoría. Ej: «Pizza 12 mil ocio»');
+      const texto = await escuchar();
+      if (!texto) {
+        toast('No te escuché. Tocá "Voz" para probar de nuevo.');
+        return;
+      }
+      escuchado = texto;
+      const g = interpretarGasto(texto);
+      const f = form();
+      f.nombre.value = g.nombre;
+      f.costo.value = g.costo !== null ? String(g.costo).replace('.', ',') : '';
+      if (g.categoria) f.categoria.value = g.categoria;
+      mostrar('Escuchando…', `Escuché: «${texto}»`);
+
+      if (!g.nombre || g.costo === null) {
+        await hablar(g.costo === null
+          ? 'No entendí el monto. Decime el gasto de nuevo.'
+          : 'No entendí el nombre. Decime el gasto de nuevo.');
+        continue;
+      }
+
+      const categoria = catDe(f.categoria.value).nombre;
+      let respuesta = null;
+      for (let intento = 0; intento < 2 && !respuesta; intento++) {
+        await hablar(intento === 0
+          ? `${g.nombre}, ${montoHablado(g.costo)}, categoría ${categoria}. ¿Lo confirmás?`
+          : 'No te entendí. ¿Lo agrego? Decí sí o no.');
+        mostrar('Escuchando…', `Escuché: «${texto}». Decí «sí» para agregarlo, «no» para repetirlo o «cancelar».`);
+        respuesta = interpretarRespuesta(await escuchar('¿Lo confirmás? Decí sí o no'));
+      }
+
+      if (respuesta === 'si') {
+        if (agregarDesdeFormulario(form())) {
+          escuchado = '';
+          toast('Gasto agregado');
+          await hablar('Listo, agregado.');
+        }
+        return;
+      }
+      if (respuesta === 'no') {
+        await hablar('Bueno, decime el gasto de nuevo.');
+        continue;
+      }
+      if (respuesta === 'cancelar') {
+        const f2 = form();
+        f2.nombre.value = '';
+        f2.costo.value = '';
+        escuchado = '';
+        await hablar('Listo, lo cancelé.');
+      } else {
+        await hablar('No te entendí. Te dejé el gasto cargado para que lo revises.');
+      }
+      return;
+    }
+  } catch (err) {
+    if (err !== CANCELADO) toast(err.message || 'No se pudo usar el micrófono.');
+  } finally {
+    if (asistente === yo) asistente = null;
+    btn.classList.remove('escuchando');
+    etiqueta.textContent = 'Voz';
+    ayuda.textContent = escuchado ? `Escuché: «${escuchado}»` : '';
+    ayuda.hidden = !escuchado;
+  }
+}
 
 async function exportar() {
   const json = JSON.stringify({ app: 'mis-gastos', version: 1, ...estado }, null, 2);
