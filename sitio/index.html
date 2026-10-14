@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title>Descargar Mis Gastos</title>
+  <meta name="description" content="Registrá tus gastos por periodos y mirá en qué gastaste. Gratis para Android, Windows y web.">
+  <meta property="og:title" content="Mis Gastos">
+  <meta property="og:description" content="Registrá tus gastos por periodos y mirá en qué gastaste.">
+  <meta property="og:image" content="https://karimnajul.github.io/mis.gastos/app/icons/icon-512.png">
+  <link rel="icon" type="image/png" href="app/icons/icon-192.png">
+  <style>
+    :root {
+      --bg: #f4f6f8; --card: #fff; --texto: #1b2430; --suave: #5f6b7a; --borde: #e2e7ec;
+      --primario: #0f766e; --primario-texto: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0f1419; --card: #19212a; --texto: #e6ebf0; --suave: #9aa7b4; --borde: #2a3540; --primario: #2dd4bf; --primario-texto: #06231f; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: var(--bg); color: var(--texto); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: 24px 16px;
+    }
+    main { width: 100%; max-width: 420px; text-align: center; }
+    .logo { width: 96px; height: 96px; border-radius: 22px; }
+    h1 { margin: 16px 0 4px; font-size: 1.8rem; }
+    .lema { color: var(--suave); margin: 0 0 24px; }
+    .estado {
+      background: var(--card); border: 1px solid var(--borde); border-radius: 14px;
+      padding: 16px; margin-bottom: 20px;
+    }
+    .estado p { margin: 0 0 12px; }
+    .estado p:last-child { margin-bottom: 0; }
+    .btn {
+      display: block; width: 100%; padding: 14px 16px; border-radius: 12px; font-weight: 600;
+      text-decoration: none; font-size: 1rem; border: 1px solid var(--borde); color: var(--texto); background: var(--card);
+    }
+    .btn.primario { background: var(--primario); color: var(--primario-texto); border-color: transparent; }
+    .otras { display: flex; flex-direction: column; gap: 10px; }
+    .otras-titulo { color: var(--suave); font-size: .9rem; margin: 0 0 10px; }
+    .ayuda { color: var(--suave); font-size: .85rem; margin-top: 20px; line-height: 1.5; text-align: left; }
+    .ayuda summary { cursor: pointer; font-weight: 600; color: var(--texto); }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="logo" src="app/icons/icon-192.png" alt="">
+    <h1>Mis Gastos</h1>
+    <p class="lema">Registrá tus gastos por periodos y mirá en qué gastaste.</p>
+
+    <div class="estado" id="estado"></div>
+
+    <p class="otras-titulo">Otras opciones</p>
+    <div class="otras" id="otras"></div>
+
+    <details class="ayuda">
+      <summary>¿Cómo se instala?</summary>
+      <p><strong>Android:</strong> abrí el archivo <em>MisGastos.apk</em> descargado. Si Android lo pide, permití "instalar apps de origen desconocido" para tu navegador y volvé a tocar el archivo.</p>
+      <p><strong>Windows:</strong> abrí <em>MisGastos.exe</em>. Si aparece "Windows protegió su PC", tocá <em>Más información → Ejecutar de todas formas</em>.</p>
+      <p><strong>iPhone / otros:</strong> usá la versión web y agregala a la pantalla de inicio (Safari → Compartir → "Agregar a inicio").</p>
+      <p>Tus datos se guardan solo en tu dispositivo.</p>
+    </details>
+  </main>
+
+  <script>
+    const BASE = 'https://github.com/KarimNajul/mis.gastos/releases/latest/download/';
+    const OPCIONES = {
+      android: { url: BASE + 'MisGastos.apk', texto: 'Descargar para Android (.apk)', descarga: true },
+      windows: { url: BASE + 'MisGastos.exe', texto: 'Descargar para Windows (.exe)', descarga: true },
+      web: { url: 'app/', texto: 'Usar en el navegador (iPhone, Mac, otros)', descarga: false },
+    };
+
+    const ua = navigator.userAgent;
+    const sistema = /android/i.test(ua) ? 'android'
+      : /windows/i.test(ua) ? 'windows'
+      : 'web';
+
+    const principal = OPCIONES[sistema];
+    const estado = document.getElementById('estado');
+
+    if (principal.descarga) {
+      estado.innerHTML = `
+        <p>Tu descarga empieza en un momento…</p>
+        <a class="btn primario" href="${principal.url}">${principal.texto}</a>`;
+      // Arranca la descarga sola al entrar; el botón queda por si no empieza.
+      setTimeout(() => { location.href = principal.url; }, 800);
+    } else {
+      estado.innerHTML = `
+        <p>En tu dispositivo podés usar la versión web e instalarla en la pantalla de inicio.</p>
+        <a class="btn primario" href="${principal.url}">Abrir Mis Gastos</a>`;
+    }
+
+    document.getElementById('otras').innerHTML = Object.entries(OPCIONES)
+      .filter(([clave]) => clave !== sistema)
+      .map(([, o]) => `<a class="btn" href="${o.url}">${o.texto}</a>`)
+      .join('');
+  </script>
+</body>
+</html>

@@ -97,3 +97,27 @@ jobs:
           files: |
             MisGastos.apk
             MisGastos.exe
+
+  # Página de descarga + versión web en https://karimnajul.github.io/mis.gastos/
+  pagina:
+    needs: publicar
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Armar sitio
+        run: |
+          mkdir -p _site/app
+          cp sitio/index.html _site/
+          cp -r www/* _site/app/
+
+      - uses: actions/upload-pages-artifact@v3
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
